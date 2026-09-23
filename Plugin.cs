@@ -18,6 +18,7 @@ namespace ClaudeHeim
     ///   CLAUDEHEIM_SCRIPT  path of the scenario file to run (required)
     ///   CLAUDEHEIM_OUT     output folder for screenshots, dumps, log.txt and result.json
     ///                      (default: BepInEx/ClaudeHeim/run)
+    ///   CLAUDEHEIM_BACKGROUND  1 = stay out of the user's way: off-screen, unfocused, silent (see Background)
     /// </summary>
     [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
     [BepInProcess("valheim.exe")]
@@ -35,6 +36,7 @@ namespace ClaudeHeim
         /// <summary>True while the startup logos / main menu are held silent (see Update). Scenario command: audio on|off.</summary>
         internal static bool MuteAudio;
         private bool _logosSkipped;
+        private float _nextSweep;
 
         private void Awake()
         {
@@ -68,12 +70,14 @@ namespace ClaudeHeim
             // for testing, so this lifts by itself the moment the local player exists. CLAUDEHEIM_MENU_AUDIO=1 keeps it on.
             MuteAudio = Environment.GetEnvironmentVariable("CLAUDEHEIM_MENU_AUDIO") != "1";
             Log.LogInfo($"{PluginName} {PluginVersion} armed: scenario '{script}', output '{outDir}'.");
+            Background.Init();
         }
 
         private void Update()
         {
             if (_runner != null)
             {
+                Background.Tick();
                 StartupQuiet();
             }
 
@@ -106,6 +110,19 @@ namespace ClaudeHeim
                 return;
             }
 
+            if (Player.m_localPlayer != null && Background.Enabled)
+            {
+                // Background runs stay silent in the world too; a full source sweep every frame is wasted there.
+                AudioListener.volume = 0f;
+                if (Time.realtimeSinceStartup >= _nextSweep)
+                {
+                    _nextSweep = Time.realtimeSinceStartup + 1f;
+                    Silence();
+                }
+
+                return;
+            }
+
             if (Player.m_localPlayer != null)
             {
                 MuteAudio = false;
@@ -119,13 +136,19 @@ namespace ClaudeHeim
         private void LateUpdate()
         {
             // Again after everyone else's Update/Start this frame: a source started this frame must not get a frame of sound.
-            if (_runner != null && MuteAudio)
+            if (_runner != null && Background.Enabled && MuteAudio)
+            {
+                AudioListener.volume = 0f;
+            }
+
+            if (_runner != null && MuteAudio && !(Background.Enabled && Player.m_localPlayer != null))
             {
                 Silence();
             }
         }
 
         private static readonly System.Collections.Generic.HashSet<AudioSource> Muted = new System.Collections.Generic.HashSet<AudioSource>();
+        private static readonly System.Collections.Generic.HashSet<UnityEngine.Video.VideoPlayer> MutedVideo = new System.Collections.Generic.HashSet<UnityEngine.Video.VideoPlayer>();
 
         private static void Silence()
         {
@@ -138,6 +161,20 @@ namespace ClaudeHeim
                 {
                     source.mute = true;
                     Muted.Add(source);
+                }
+            }
+
+            // Cinematics (the cold-start intro) play through VideoPlayer "direct" audio, which bypasses both the
+            // listener volume and AudioSource.mute.
+            foreach (var video in FindObjectsByType<UnityEngine.Video.VideoPlayer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                for (ushort track = 0; track < Math.Max((ushort)1, video.audioTrackCount); track++)
+                {
+                    if (!video.GetDirectAudioMute(track))
+                    {
+                        video.SetDirectAudioMute(track, true);
+                        MutedVideo.Add(video);
+                    }
                 }
             }
         }
@@ -154,6 +191,18 @@ namespace ClaudeHeim
             }
 
             Muted.Clear();
+            foreach (var video in MutedVideo)
+            {
+                if (video != null)
+                {
+                    for (ushort track = 0; track < Math.Max((ushort)1, video.audioTrackCount); track++)
+                    {
+                        video.SetDirectAudioMute(track, false);
+                    }
+                }
+            }
+
+            MutedVideo.Clear();
         }
 
         private void OnDestroy()

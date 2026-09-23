@@ -30,6 +30,7 @@ namespace ClaudeHeim
                 case "foods": Info("foods: " + FoodList()); return null;
                 case "clearfood": Player.m_localPlayer.ClearFood(); return null;
                 case "die": return Die();
+                case "regen": return Regen(F(Arg(a, 1, "5")), F(Arg(a, 2, "3")));
                 case "respawn": return Respawn(F(Arg(a, 1, "90")));
                 case "split": return SplitDialog(Arg(a, 1), Arg(a, 2, "open"));
                 case "tombstones": Tombstones(Arg(a, 1, "list"), F(Arg(a, 2, "30"))); return null;

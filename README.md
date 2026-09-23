@@ -39,6 +39,21 @@ the lock. Pass `-Owner <session name>` so the lock says who holds it. `-ValheimD
 `VALHEIM_DIR`, then the usual Steam folders). `-Mods Auga` builds `..\Auga\Auga\Auga.csproj`, i.e. the
 [Auga 1.0 port](https://github.com/FNGApex/Auga) cloned next to ClaudeHeim.
 
+**Background mode (default)** keeps the run out of the way of the person using the PC:
+- **Focus:** the game never keeps focus. The runner and the plugin hand it straight back to whatever had it at launch, and
+  the runner reports whether the game ever held it.
+- **Window:** a borderless window with no taskbar button. It goes on the monitor named by `-Monitor <hardware id>`, or by
+  `"monitor"` in the git-ignored `runner.local.json`, and is matched by id, so switching another screen off doesn't move
+  it. List the ids with `Get-CimInstance -Namespace root\wmi WmiMonitorID`. With no monitor set, or the monitor not
+  connected, the window goes past the right edge of the desktop.
+- **Console, sound, load:** the BepInEx console is off for the run, and sound stays off the whole run, including the intro
+  cinematic's VideoPlayer direct audio. The runner checks this with Windows' own peak meter for the game process and reports
+  it: silent, or SOUND with the time it started. The game runs at below-normal priority and is capped at 30 fps.
+- **Settings:** the game saves its window mode, size and position into the user's own Valheim settings (registry key
+  `HKCU\Software\IronGate\Valheim`) when it quits. The runner exports that key before the run and restores it afterwards,
+  and restores `BepInEx.cfg` too.
+- `-Foreground` gives the old behaviour: a normal window, in-world audio on.
+
 Output folder: `NN_name.png` screenshots (readable by Claude as images), `*.txt` dumps / hover texts, `log.txt`
 (scenario log), `result.json` (`commands`, `failures[]`, `errors[]` = every distinct error/exception the game logged,
 with count and the command during which it first happened), `LogOutput.log` (full BepInEx log).
@@ -67,6 +82,7 @@ One command per line, `#` comments, `"quotes"` keep spaces. The scenario starts 
 | `ui store open <ref>`, `ui container open <ref>` | trader / chest UI for a spawned or placed object |
 | `give <item> <n>`, `equip <item>`, `unequip` | inventory (give tops up to n). **While a build tool is equipped the game hovers nothing.** |
 | `eat <item> [ok\|fail]`, `foods`, `clearfood` | eat through `Player.ConsumeItem` (gives one first); `fail` asserts the game refuses (same food again, 3 foods). `foods` logs name / time left / hp / stamina / eitr |
+| `regen <hp/s> <s>` | heal a little every frame, the way regen mods do, then fail if a visible smooth-filling `GuiBar` stayed frozen while health rose |
 | `split <item> [open\|close]` | open the split-stack dialog for a stack (needs 2+), or close it; logs which SplitDialog object is live |
 | `fill <ref> <item> <n> [quality]`, `quality <item> <n>` | container stacks with an upgrade level; upgrade level of a stack in the player inventory |
 | `recipe <item>` | select a recipe in the open crafting panel (prefab or localized name) |
@@ -102,15 +118,26 @@ Type names resolve by full name first, then by simple name across all loaded ass
 
 ## Scenarios included
 
+General (vanilla or any mod set):
 - `stations.chs` - place workbench / forge / chest / smelter / kiln, open station UIs, hover the input switches.
-- `auga-tour.chs` - every screen the Auga port touches (run with `-Mods Auga`).
-- `auga-pausemenu.chs` - short pause menu + compendium check.
-- `ui-census.chs` - dump every UI canvas; run with `-Vanilla` and with mods, then diff.
+- `texts-enemies.chs` - text viewers, messages and the enemy hud; run vanilla and with mods and compare the shots.
 - `food-respawn.chs` - eat three foods (HUD food panels, refusal rules), die, respawn, check the HUD comes back with the new player.
-- `audit3.chs` - the 2026-09-21 Auga audit round (radial hints, rune close hint, messages, pause menu, settings tabs, map, store).
-- `augafy.chs` - Auga hover rows, Auga split dialog, build-piece readout. `mainmenu.chs` - the Augafied main menu through FejdStartup's handlers, then `enter`.
-- `issues.chs` - reproductions for the upstream Auga issues still plausible on 1.0 (`ISSUES_1.0.md` in the Auga port). `issue-*.chs` / `s5-*.chs` - one scenario per needs-test issue / research-backlog flow.
-- `cleanup-testworld.chs` - teleport to the death-test spot and remove RETEP's tombstones.
+- `hp-regen.chs` - per-frame healing (regen mods): the health bar fill must keep moving.
+- `ui-census.chs` - dump every UI canvas; run with `-Vanilla` and with mods, then diff.
+- `s5-*.chs` - UI behaviour flows: split dialog bounds (04), portal tag (05), container cycling (07), map pins (09),
+  hammer/hoe build menus (11), trader coins (13), GUI scale 60/100/150% (43).
+
+Auga port (run with `-Mods Auga`):
+- `auga-tour.chs` - every screen the Auga port touches.
+- `mainmenu.chs` - the Augafied main menu through FejdStartup's handlers, then `enter`.
+- `augafy.chs` - Auga hover rows, Auga split dialog, build-piece readout.
+- `audit3.chs` - regression for the audit fixes (radial hints, rune close hint, messages, pause menu, settings tabs, map, store).
+- `auga-api.chs` - the AugaAPI stub a consumer mod carries, calling into the real Auga.
+- `issues.chs` - reproductions for the upstream Auga issues still plausible on 1.0 (`ISSUES_1.0.md` in the Auga port).
+- `issue-62-inventory-rows.chs` - #62/#228: extra inventory rows vs the container panel (a fixed bug).
+
+One-off scenarios whose results are recorded elsewhere were removed on 2026-09-22. They are still in git history, in
+commit `ae46ad1`.
 
 ## Adding a command
 

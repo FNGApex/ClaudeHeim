@@ -57,6 +57,37 @@ namespace ClaudeHeim
             Info($"split: dialog={(dialog != null ? PathOf(dialog.transform) : "null")} active={(dialog != null && dialog.IsActive)} slider={(dialog != null && dialog.m_splitSlider != null ? dialog.m_splitSlider.value + "/" + dialog.m_splitSlider.maxValue : "-")}");
         }
 
+        /// <summary>
+        /// regen &lt;hpPerSecond&gt; &lt;seconds&gt;: heal the local player a little every frame (the way regen mods do), then check
+        /// that every visible smooth-filling GuiBar actually moved. Catches fills frozen by a re-armed change delay.
+        /// </summary>
+        private IEnumerator Regen(float perSecond, float seconds)
+        {
+            var player = Player.m_localPlayer ?? throw new Exception("no local player");
+            var bars = UnityEngine.Object.FindObjectsByType<GuiBar>(FindObjectsSortMode.None)
+                .Where(b => b.isActiveAndEnabled && b.m_smoothFill).ToList();
+            var start = bars.ToDictionary(b => b, b => b.GetSmoothValue());
+            var hpBefore = player.GetHealth();
+            for (var t = 0f; t < seconds; t += Time.deltaTime)
+            {
+                player.Heal(perSecond * Time.deltaTime, false);
+                yield return null;
+            }
+            Info($"regen: health {hpBefore:0.0} -> {player.GetHealth():0.0} / {player.GetMaxHealth():0}; {bars.Count} smooth-fill bar(s)");
+            var frozen = new List<string>();
+            foreach (var bar in bars)
+            {
+                if (bar == null) continue;
+                var moved = bar.GetSmoothValue() - start[bar];
+                Info($"  {PathOf(bar.transform)}: smooth {start[bar]:0.000} -> {bar.GetSmoothValue():0.000}");
+                if (moved < 0.01f) frozen.Add(PathOf(bar.transform));
+            }
+            if (player.GetHealth() - hpBefore > 1f && frozen.Count > 0)
+            {
+                throw new Exception("smooth-fill bar(s) frozen while health rose: " + string.Join(", ", frozen));
+            }
+        }
+
         private static string FoodList()
         {
             var player = Player.m_localPlayer;
