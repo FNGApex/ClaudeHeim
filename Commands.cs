@@ -17,7 +17,17 @@ namespace ClaudeHeim
         {
             switch (a[0].ToLowerInvariant())
             {
-                case "enter": return Enter(Arg(a, 1, "RETEP"), Arg(a, 2));
+                case "enter": return Enter(Arg(a, 1, "RETEP"), Arg(a, 2), Arg(a, 3, "") == "nowait");
+                case "newchar": return NewCharacter(Arg(a, 1));
+                case "newworld": return NewWorld(Arg(a, 1), Arg(a, 2));
+                case "selectworld": SelectWorld(Arg(a, 1)); return null;
+                case "terrain": return Terrain(a);
+                case "expectfail": ExpectFail(a.Skip(1).ToList()); return null;
+                case "mark": Mark(a); return null;
+                case "marks": Info("marks: " + (Marks.Count == 0 ? "none" : string.Join(", ", Marks.Select(m => $"{m.Key} ({m.Value.x:0.#}, {m.Value.y:0.#}, {m.Value.z:0.#})")))); return null;
+                case "findbiome": FindBiome(a); return null;
+                case "seedprobe": SeedProbe(a); return null;
+                case "learn": LearnAll(); return null;
                 case "wait": return Wait(F(Arg(a, 1, "1")));
                 case "waitfor": return WaitFor(Arg(a, 1), F(Arg(a, 2, "30")));
                 case "shot": return Shot(Arg(a, 1, "shot"));
@@ -34,7 +44,15 @@ namespace ClaudeHeim
                 case "respawn": return Respawn(F(Arg(a, 1, "90")));
                 case "split": return SplitDialog(Arg(a, 1), Arg(a, 2, "open"));
                 case "tombstones": Tombstones(Arg(a, 1, "list"), F(Arg(a, 2, "30"))); return null;
-                case "teleport": return Teleport(F(Arg(a, 1)), F(Arg(a, 2)), F(Arg(a, 3, "60")));
+                case "teleport":
+                    if ((Arg(a, 1) ?? "").StartsWith("@"))
+                    {
+                        var ti = 1;
+                        var target = Point(a, ref ti);
+                        return Teleport(target.x, target.z, F(Arg(a, ti, "60")));
+                    }
+
+                    return Teleport(F(Arg(a, 1)), F(Arg(a, 2)), F(Arg(a, 3, "60")));
                 case "spawn": Spawn(Arg(a, 1), F(Arg(a, 2, "3")), RefName(a)); return null;
                 case "place": return Place(Arg(a, 1), F(Arg(a, 2, "3")), RefName(a));
                 case "despawn": Despawn(); return null;
@@ -64,6 +82,8 @@ namespace ClaudeHeim
                 case "clearinv": Player.m_localPlayer.GetInventory().RemoveAll(); Info("clearinv: player inventory emptied"); return null;
                 case "click": UiPointer(Arg(a, 1), true, Arg(a, 2, "left"), a.Count > 4 ? F(Arg(a, 3)) : (float?)null, a.Count > 4 ? F(Arg(a, 4)) : (float?)null); return null;
                 case "hoverui": UiPointer(Arg(a, 1), false); return null;
+                case "hoveritem": return HoverItem(Arg(a, 1));
+                case "finditems": FindItems(Arg(a, 1), int.Parse(Arg(a, 2, "40"))); return null;
                 case "dump": Dump(Arg(a, 1), Arg(a, 2)); return null;
                 case "describe": DescribeObject(Arg(a, 1)); return null;
                 case "expect": Expect(a); return null;
@@ -142,7 +162,7 @@ namespace ClaudeHeim
         private static string Sanitize(string s) => new string((s ?? "x").Select(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' ? c : '_').ToArray());
 
         /// <summary>From the main menu: pick a character by display name, a world by name (default: first whose name contains "test"), start single player.</summary>
-        private IEnumerator Enter(string characterName, string worldName)
+        private IEnumerator Enter(string characterName, string worldName, bool noWait = false)
         {
             var fejd = FejdStartup.instance;
             if (fejd == null)
@@ -172,12 +192,19 @@ namespace ClaudeHeim
                 throw new Exception($"world '{worldName ?? "*test*"}' not found (have: {string.Join(", ", worlds.Select(w => w.m_name))})");
             }
 
-            Info($"entering world '{worlds[index].m_name}' as '{profile.GetName()}'");
+            Info($"entering world '{worlds[index].m_name}' ({worlds[index].m_fileSource}) as '{profile.GetName()}' ({profile.m_fileSource})");
             fejd.SetSelectedWorld(index, false);
             // Single player only: never open or list the session.
             fejd.m_openServerToggle.isOn = false;
             fejd.m_publicServerToggle.isOn = false;
             fejd.OnWorldStart();
+            if (noWait)
+            {
+                // Loading-screen tests: return while the world is still loading (follow with waitfor player).
+                yield return new WaitForSecondsRealtime(1f);
+                Info("world start requested (nowait)");
+                yield break;
+            }
 
             var waited = 0f;
             while ((Player.m_localPlayer == null || Hud.instance == null || InventoryGui.instance == null) && waited < 240f)
@@ -1095,6 +1122,11 @@ namespace ClaudeHeim
                     break;
                 case "ui":
                     FindUi(Arg(a, 2));
+                    break;
+                case "height":
+                case "ground":
+                case "biome":
+                    ExpectTerrain(a);
                     break;
                 default:
                     throw new Exception("unknown expectation");

@@ -32,6 +32,7 @@ namespace ClaudeHeim
         internal static Plugin Instance;
 
         private Runner _runner;
+        private bool _passive;
 
         /// <summary>True while the startup logos / main menu are held silent (see Update). Scenario command: audio on|off.</summary>
         internal static bool MuteAudio;
@@ -57,6 +58,17 @@ namespace ClaudeHeim
                 outDir = Path.Combine(Paths.BepInExRootPath, "ClaudeHeim", "run");
             }
 
+            // CLAUDEHEIM_SCRIPT=passive: another mod drives the test (e.g. ValheimSurvival's own test driver). No scenario
+            // runs; ClaudeHeim only provides background mode, the startup quiet and the logo skip.
+            if (script == "passive")
+            {
+                _passive = true;
+                MuteAudio = Environment.GetEnvironmentVariable("CLAUDEHEIM_MENU_AUDIO") != "1";
+                Log.LogInfo($"{PluginName} {PluginVersion} armed passive (an external test driver runs this game).");
+                Background.Init();
+                return;
+            }
+
             if (string.IsNullOrEmpty(script) || !File.Exists(script))
             {
                 Log.LogError($"CLAUDEHEIM=1 but CLAUDEHEIM_SCRIPT does not point at a file ('{script}'). Nothing to run.");
@@ -75,7 +87,7 @@ namespace ClaudeHeim
 
         private void Update()
         {
-            if (_runner != null)
+            if (_runner != null || _passive)
             {
                 Background.Tick();
                 StartupQuiet();
@@ -136,12 +148,12 @@ namespace ClaudeHeim
         private void LateUpdate()
         {
             // Again after everyone else's Update/Start this frame: a source started this frame must not get a frame of sound.
-            if (_runner != null && Background.Enabled && MuteAudio)
+            if ((_runner != null || _passive) && Background.Enabled && MuteAudio)
             {
                 AudioListener.volume = 0f;
             }
 
-            if (_runner != null && MuteAudio && !(Background.Enabled && Player.m_localPlayer != null))
+            if ((_runner != null || _passive) && MuteAudio && !(Background.Enabled && Player.m_localPlayer != null))
             {
                 Silence();
             }

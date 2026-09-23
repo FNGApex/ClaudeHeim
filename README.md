@@ -64,13 +64,47 @@ Use a throwaway character and world: scenarios give items, place pieces, spawn c
 scenarios use character **RETEP** and single-player world **TestWorld**; edit their `enter` lines to match yours. `enter`
 always switches the "open server"/"public" toggles off.
 
+## Test saves
+
+Scenarios can create their own characters and worlds with `newchar` / `newworld`. These are always local saves
+(`characters_local` / `worlds_local`), so Steam Cloud never syncs them. After each run, `Run-ClaudeHeim.ps1` records
+every save the run created in `TEST_SAVES.json` in the folder that contains ClaudeHeim, next to `.game-lock`. That
+file is machine-specific and not in git. `Manage-TestSaves.ps1` lists that registry and archives, wipes or restores
+saves from it:
+- It only touches local saves in the registry.
+- Entries marked protected (`-Protect`) are never touched.
+- Entries can be `"platform": "linux"` saves in WSL.
+- It refuses while the game on that platform is running.
+
 ## Scenario files (`scenarios/*.chs`)
 
 One command per line, `#` comments, `"quotes"` keep spaces. The scenario starts at the main menu.
 
 | Command | What it does |
 |---|---|
-| `enter <character> [world]` | main menu -> single-player world (default world: first containing "test"); waits for the player |
+| `enter <character> [world] [nowait]` | main menu -> single-player world (default world: first containing "test"); waits for the player, or with `nowait` returns during the loading screen |
+| `terrain info\|height <pt>` | terrain op prefabs + heightmap resolution / ground height, biome and water level at a point. Points: `x z`, `@mark`, `@player`, `@name+dx,dz` |
+| `terrain pad <name> <pt> <size> [h]`, `level <pt> <r> [h]`, `raise\|lower <pt> <r> <d>`, `slope <pt1> <h1> <pt2> <h2> <width>`, `smooth <pt> <r>`, `water <pt> <r> <depth>`, `paint <pt> <r> dirt\|cultivated\|paved\|reset`, `reset <pt> <r>` | exact terrain edits (per-vertex, like the hoe's own data; base +-8 m limit, refused vertices are counted). Heights: absolute, or `+1.5` / `-2` relative to the point. `pad` also clears vegetation and records a mark; a pad already in place is skipped |
+| `terrain clear <pt> <r>` / `terrain nuke <pt> <r>` | remove vegetation and loose objects / EVERY networked object except players (and reset the terrain edits there) |
+| `terrain snapshot <name> <pt> <r>` / `terrain restore <name>` | save / restore the terrain data of the zones in an area, exactly |
+| `mark <name> [pt]`, `marks`, `findbiome <Biome> [min] [max] [mark]`, `teleport @mark` | named spots per world (BepInEx/ClaudeHeim/marks), nearest dry spot of a biome |
+| `expect height <pt> [h] [tol]`, `expect biome <pt> <Biome>`, `expectfail <command...>` | terrain checks; a negative test that passes when the command is refused |
+
+| `learn all` | the player knows every material and crafting station level, so every recipe and piece is available (test characters) |
+| `seedprobe <prefix> <count> [radius]` / `seedprobe seeds <s1> ...` | main menu: rank candidate world seeds by the biomes around the world centre (no world is created); writes `seedprobe.txt` |
+
+**Lab world + golden copy:** `scenarios/lab-setup.chs` builds the ClaudeLab test lab once (seed CLAUDELA16, character
+LABTEST, pads and marks 100 m from spawn). `Manage-TestSaves.ps1 -SaveGolden -Name ClaudeLab -Character labtest` stores
+the world folder, the character and the marks in `TestSavesGolden\ClaudeLab`; `Run-ClaudeHeim.ps1 -Golden
+ClaudeLab:labtest` puts them back before the run (game closed, under the lock, registered local saves only), so every
+run starts on identical ground, objects and character. `scenarios/lab-check.chs` verifies it.
+
+**Terrain edits only run in registered local test worlds:** the runner passes `CLAUDEHEIM_TERRAIN_WORLDS` (the active,
+unprotected, local worlds in `TEST_SAVES.json`) and every editing command refuses any other world, and any cloud save.
+Wards and no-build locations (e.g. the spawn stones) are refused like the hoe refuses them.
+
+| `selectworld <name>` | select a world in the open start-game list by name |
+| `newchar <name>`, `newworld <name> [seed]` | create a test character (through the game's New Character flow) / world as a **local** save (never Steam Cloud); an existing local one is reused, a cloud one is refused. Each is written to `testsaves.jsonl`, and the runner adds it to the registry, see [Test saves](#test-saves) |
 | `wait <s>` / `waitfor player\|mainmenu\|<member path> [timeout]` | pause / poll until non-null or true |
 | `shot <name>` | screenshot after 1 s settle |
 | `log <text>` | line in log.txt |
@@ -107,6 +141,8 @@ One command per line, `#` comments, `"quotes"` keep spaces. The scenario starts 
 | `loadasm <path>` | load an extra assembly (e.g. a mod API stub); its types are reachable as `asm:<AssemblyName>\|<Type>`. A relative path is relative to the scenario file |
 | `invoke <ComponentType>[@pathSuffix] <Method> [args]` | method on the first live component of that type (inactive included) |
 | `click <uiNameOrPath> [left\|middle\|right] [x y]` / `hoverui <uiNameOrPath>` | uGUI pointer events on an active UI object (buttons, tooltips); optional button and screen position |
+| `hoveritem <prefab>` | with the inventory open, hover the slot holding that item so its tooltip shows (moves only the Input System mouse state, never the OS cursor) |
+| `finditems <filter> [max]` | list item prefabs: `type:<ItemType>`, `set`, `mods` (1.0 equipment modifiers), `se` (status effect), or a name substring |
 | `type "<text>"` | text into the focused input field (TextInput's or the selected TMP_InputField), truncated at characterLimit like typing |
 | `move <item> player\|container [n]`, `remove <item> <n>`, `clearinv` | move a stack between the player inventory and the open container; remove n; empty the player inventory |
 | `last`, `@last` | the previous `call` / `invoke` result: `get last.m_checked`, `set last.m_checked true`, or `@last` as an argument. `call` also fills a method's optional parameters with their defaults |
@@ -124,6 +160,7 @@ General (vanilla or any mod set):
 - `food-respawn.chs` - eat three foods (HUD food panels, refusal rules), die, respawn, check the HUD comes back with the new player.
 - `hp-regen.chs` - per-frame healing (regen mods): the health bar fill must keep moving.
 - `ui-census.chs` - dump every UI canvas; run with `-Vanilla` and with mods, then diff.
+- `testsaves.chs` - create (or reuse) the local test character AUGATEST and world AugaTest, and enter for the first spawn.
 - `s5-*.chs` - UI behaviour flows: split dialog bounds (04), portal tag (05), container cycling (07), map pins (09),
   hammer/hoe build menus (11), trader coins (13), GUI scale 60/100/150% (43).
 

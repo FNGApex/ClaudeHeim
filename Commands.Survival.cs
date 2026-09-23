@@ -241,9 +241,15 @@ namespace ClaudeHeim
         private IEnumerator Teleport(float x, float z, float timeout)
         {
             var player = Player.m_localPlayer ?? throw new Exception("no local player");
+            // A distant teleport ends once there is a floor below the target, but the game does NOT move the player down
+            // onto it: from y 80 that was a lethal fall onto ground at ~38 m (LABTEST's tombstone in the lab runs). So:
+            // god mode while in transit, then set the player on the floor with no fall speed, then restore god mode.
+            var godMode = player.m_godMode;
+            player.m_godMode = true;
             var target = new Vector3(x, 80f, z);
             if (!player.TeleportTo(target, player.transform.rotation, true))
             {
+                player.m_godMode = godMode;
                 throw new Exception("TeleportTo refused (already teleporting?)");
             }
 
@@ -254,7 +260,16 @@ namespace ClaudeHeim
                 yield return new WaitForSecondsRealtime(0.5f);
             }
 
+            if (ZoneSystem.instance.FindFloor(new Vector3(x, 1000f, z), out var floor))
+            {
+                player.transform.position = new Vector3(x, floor + 0.2f, z);
+                if (player.m_body != null) player.m_body.velocity = Vector3.zero;
+                player.m_maxAirAltitude = player.transform.position.y;
+            }
+
             yield return new WaitForSecondsRealtime(2f);
+            player.m_maxAirAltitude = player.transform.position.y;
+            player.m_godMode = godMode;
             Info($"teleport: at {player.transform.position} after {waited:0.0}s (target {x}, {z})");
             if (Vector2.Distance(new Vector2(player.transform.position.x, player.transform.position.z), new Vector2(x, z)) > 10f)
             {
@@ -269,7 +284,12 @@ namespace ClaudeHeim
             var here = Player.m_localPlayer.transform.position;
             var own = UnityEngine.Object.FindObjectsByType<TombStone>(FindObjectsSortMode.None)
                 .Where(t => t.GetOwnerName() == owner && Vector3.Distance(t.transform.position, here) <= radius).ToList();
-            Info($"tombstones: {own.Count} of {owner} within {radius} m: {string.Join("; ", own.Select(t => t.transform.position.ToString()))}");
+            var now = ZNet.instance.GetTime();
+            Info($"tombstones: {own.Count} of {owner} within {radius} m (world time {now:yyyy-MM-dd HH:mm:ss}): " + string.Join("; ", own.Select(t =>
+            {
+                var ticks = t.m_nview != null && t.m_nview.IsValid() ? t.m_nview.GetZDO().GetLong(ZDOVars.s_timeOfDeath, 0L) : 0L;
+                return $"{t.transform.position} died at world time {(ticks > 0 ? new DateTime(ticks).ToString("yyyy-MM-dd HH:mm:ss") : "?")}";
+            })));
             if (!verb.Equals("clear", StringComparison.OrdinalIgnoreCase))
             {
                 return;

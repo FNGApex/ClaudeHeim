@@ -16,10 +16,22 @@
 #              Get-CimInstance -Namespace root\wmi WmiMonitorID). Matched by id, not by index, so it still works when
 #              another monitor is switched off. Default: "monitor" in runner.local.json next to this script (git-ignored).
 #              Not set or not connected: the window goes off-screen.
+#   -Scenario external  no ClaudeHeim scenario: another mod's own test driver runs the game (armed through -GameEnv) and
+#              quits it; ClaudeHeim loads passive (background mode, quiet start only). The runner still does lock, plugin
+#              parking, prefs restore, focus/audio checks and log collection. -ResultPattern picks the lines to report.
+#   -Golden    <world>:<character> - before launch, put the golden copy of a lab world and its test character back
+#              (see Manage-TestSaves.ps1 -SaveGolden), so the run starts on identical ground, objects and character.
+#   -GameEnv   extra environment variables for the game, e.g. -GameEnv VSURV_TEST=1,VSURV_OPTION=x (a quoted
+#              "A=1,B=2" works too). External mode stops early when -ResultPattern has not matched any LogOutput line
+#              -StartTimeoutSeconds (default 150) after launch: "external driver never started".
 #   -ValheimDir game folder (default: env VALHEIM_DIR, then the usual Steam folders)
 # The lock file and -Mods projects are looked up in the folder that contains ClaudeHeim (e.g. Auga cloned next to it).
 param(
     [Parameter(Mandatory = $true)][string]$Scenario,
+    [string[]]$GameEnv = @(),
+    [string]$Golden = "",
+    [string]$ResultPattern = "",
+    [int]$StartTimeoutSeconds = 150,
     [string]$OutDir = "$env:TEMP\claudeheim_run",
     [string[]]$Mods = @(),
     [switch]$Vanilla,
@@ -43,17 +55,58 @@ $lock = Join-Path $root ".game-lock"
 $plugins = Join-Path $ValheimDir "BepInEx\plugins"
 $aside = Join-Path $ValheimDir "BepInEx\plugins_claudeheim_aside"
 
-if (-not (Test-Path $Scenario)) { $Scenario = Join-Path $here "scenarios\$Scenario" }
-if (-not (Test-Path $Scenario)) { "scenario not found: $Scenario"; exit 1 }
-$Scenario = (Resolve-Path $Scenario).Path
+$external = $Scenario -eq "external"
+if (-not $external) {
+    if (-not (Test-Path $Scenario)) { $Scenario = Join-Path $here "scenarios\$Scenario" }
+    if (-not (Test-Path $Scenario)) { "scenario not found: $Scenario"; exit 1 }
+    $Scenario = (Resolve-Path $Scenario).Path
+}
 
 if (Get-Process valheim -ErrorAction SilentlyContinue) { "valheim is already running - not starting a test"; exit 2 }
 if ((Test-Path $lock) -and ((Get-Date) - (Get-Item $lock).LastWriteTime).TotalMinutes -lt 15) { "fresh .game-lock held by: " + (Get-Content $lock -Raw); exit 3 }
+# The WSL runner's Steam account borrows Valheim by Family Sharing from this account: only one of the two games can
+# run at a time (a Windows launch takes the shared licence back and kills the Linux session).
+$linuxLock = Join-Path $root ".game-lock-linux"
+if ((Test-Path $linuxLock) -and ((Get-Date) - (Get-Item $linuxLock).LastWriteTime).TotalMinutes -lt 15) { "fresh .game-lock-linux held by: " + (Get-Content $linuxLock -Raw) + " (Family Sharing: Windows and Linux runs cannot overlap)"; exit 3 }
 "$Owner $(Get-Date -Format s) claudeheim $(Split-Path $Scenario -Leaf)" | Set-Content $lock
 
 $runOut = Join-Path $ValheimDir "BepInEx\ClaudeHeim\run"
 $moved = @()
+# A copy of a -Mods plugin the user installed to play with (e.g. Auga) is parked outside plugins for the run, so the
+# test gets a fresh build and the cleanup below never deletes the user's copy; it goes back at the end. A user copy
+# of a mod NOT under test is parked too, so "-Mods" means exactly what it says.
+$parked = Join-Path $ValheimDir "BepInEx\plugins_user_parked"
+$parkedNames = @()
+foreach ($name in @("Auga") + $Mods | Select-Object -Unique) {
+    $dir = Join-Path $plugins $name
+    if ((Test-Path $dir) -and -not (Test-Path (Join-Path $parked $name))) {
+        [IO.Directory]::CreateDirectory($parked) | Out-Null
+        Move-Item $dir (Join-Path $parked $name)
+        $parkedNames += $name
+    }
+}
 try {
+    if ($Golden) {
+        # Golden restore: only the named, registered, unprotected local Windows test saves are replaced.
+        $goldWorld, $goldChar = $Golden -split ":", 2
+        $goldChar = "$goldChar".ToLowerInvariant()
+        $goldDir = Join-Path $root "TestSavesGolden\$goldWorld"
+        $saveRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\IronGate\Valheim"
+        $registry = Get-Content (Join-Path $root "TEST_SAVES.json") -Raw | ConvertFrom-Json
+        $okWorld = $registry.saves | Where-Object { $_.kind -eq "world" -and $_.name -eq $goldWorld -and $_.status -eq "active" -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") }
+        $okChar = $registry.saves | Where-Object { $_.kind -eq "character" -and $_.name -eq $goldChar -and $_.status -eq "active" -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") }
+        $isProtected = $registry.protected | Where-Object { $_.name -eq $goldWorld -or $_.name -eq $goldChar }
+        if (-not (Test-Path "$goldDir\golden.json") -or -not $okWorld -or -not $okChar -or $isProtected) { "golden restore refused: need $goldDir and registered local test saves $goldWorld / $goldChar"; exit 6 }
+        $worldDir = Join-Path $saveRoot "worlds_local\$goldWorld"
+        if (Test-Path $worldDir) { Remove-Item $worldDir -Recurse -Force }
+        Copy-Item "$goldDir\world\$goldWorld" (Join-Path $saveRoot "worlds_local\") -Recurse
+        Copy-Item "$goldDir\character\*" (Join-Path $saveRoot "characters_local\") -Force
+        $marksDir = Join-Path $ValheimDir "BepInEx\ClaudeHeim\marks"
+        [IO.Directory]::CreateDirectory($marksDir) | Out-Null
+        if (Test-Path "$goldDir\marks.txt") { Copy-Item "$goldDir\marks.txt" (Join-Path $marksDir "$goldWorld.txt") -Force }
+        "--- golden restore: $goldWorld + $goldChar from $((Get-Content "$goldDir\golden.json" -Raw | ConvertFrom-Json).saved)"
+    }
+
     $build = dotnet build (Join-Path $here "ClaudeHeim.csproj") -c Release -v q -p:DeployClaudeHeim=true "-p:ValheimDir=$ValheimDir" 2>&1
     if ($LASTEXITCODE -ne 0) { $build | Select-String "error" | Select-Object -First 10; "ClaudeHeim build failed"; exit 4 }
 
@@ -76,9 +129,28 @@ try {
         }
     }
 
+    # A previous run's output must never be reported as this run's (external mode writes no result.json).
+    if (Test-Path $runOut) { Get-ChildItem $runOut -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
     $env:CLAUDEHEIM = "1"
-    $env:CLAUDEHEIM_SCRIPT = $Scenario
+    $env:CLAUDEHEIM_SCRIPT = if ($external) { "passive" } else { $Scenario }
+    $envSet = @()
+    foreach ($pair in ($GameEnv | ForEach-Object { $_ -split "," } | Where-Object { $_ })) {
+        $k, $v = $pair -split "=", 2
+        if ($k) { Set-Item "env:$k" $v; $envSet += $k }
+    }
     $env:CLAUDEHEIM_OUT = $runOut
+    # Terrain edits (ClaudeHeim terrain ...) are only allowed in the active, unprotected, LOCAL Windows test worlds of the
+    # test-save registry; the plugin also checks that the world it is in is a local save.
+    $terrainWorlds = @()
+    $registryFile = Join-Path $root "TEST_SAVES.json"
+    if (Test-Path $registryFile) {
+        $registry = Get-Content $registryFile -Raw | ConvertFrom-Json
+        $protectedNames = @($registry.protected | Where-Object { $_.kind -eq "world" -and (-not $_.platform -or $_.platform -eq "windows") } | ForEach-Object { $_.name })
+        $terrainWorlds = @($registry.saves | Where-Object {
+            $_.kind -eq "world" -and $_.status -eq "active" -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") -and ($protectedNames -notcontains $_.name)
+        } | ForEach-Object { $_.name })
+    }
+    $env:CLAUDEHEIM_TERRAIN_WORLDS = $terrainWorlds -join ","
     $gameArgs = @("-screen-fullscreen", "0", "-screen-width", ($Resolution -split "x")[0], "-screen-height", ($Resolution -split "x")[1])
     if (-not $Foreground) {
         Add-Type -Namespace ClaudeHeimRun -Name User32 -MemberDefinition @'
@@ -162,7 +234,19 @@ public static bool ReturnFocus(uint pid, System.IntPtr back) {
         try { $p.PriorityClass = "BelowNormal" } catch {}
         # Sample who holds focus every 100 ms: the report says whether the test instance ever got in the user's way.
         $sw = [Diagnostics.Stopwatch]::StartNew()
+        $driverSeen = $false
+        $liveLog = Join-Path $ValheimDir "BepInEx\LogOutput.log"
         while (-not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+            # External driver that never arms (wrong env, wrong world): don't sit at the main menu until the timeout.
+            if ($external -and $ResultPattern -and -not $driverSeen -and $sw.Elapsed.TotalSeconds -gt $StartTimeoutSeconds) {
+                $driverSeen = [bool](Select-String -Path $liveLog -Pattern $ResultPattern -Quiet -ErrorAction SilentlyContinue)
+                if (-not $driverSeen) {
+                    "--- external driver never started: no line matching '$ResultPattern' after $StartTimeoutSeconds s - stopping the test instance"
+                    try { Stop-Process -Id $p.Id -Force } catch {}
+                    Start-Sleep 3
+                    break
+                }
+            }
             $fgPid = 0
             [ClaudeHeimRun.User32]::GetWindowThreadProcessId([ClaudeHeimRun.User32]::GetForegroundWindow(), [ref]$fgPid) | Out-Null
             if ($fgPid -eq $p.Id) {
@@ -188,6 +272,7 @@ public static bool ReturnFocus(uint pid, System.IntPtr back) {
 finally {
     $env:CLAUDEHEIM = $null
     $env:CLAUDEHEIM_BACKGROUND = $null
+    $env:CLAUDEHEIM_TERRAIN_WORLDS = $null
     $env:CLAUDEHEIM_WINDOW_POS = $null
     if ($bepCfgText) { [IO.File]::WriteAllText($bepCfg, $bepCfgText) }
     if ($prefsBackup -and (Test-Path $prefsBackup)) {
@@ -205,12 +290,21 @@ finally {
         $dir = Join-Path $plugins $name
         if (Test-Path $dir) { [IO.Directory]::Delete($dir, $true) }
     }
+    foreach ($name in $parkedNames) { Move-Item (Join-Path $parked $name) (Join-Path $plugins $name) }
+    if ((Test-Path $parked) -and -not (Get-ChildItem $parked)) { [IO.Directory]::Delete($parked) }
     if (Test-Path $lock) { [IO.File]::Delete($lock) }
 }
 
 "cleaned up: plugins now = " + ((Get-ChildItem $plugins).Name -join ", ") + " ; lock released: " + (-not (Test-Path $lock))
+foreach ($k in $envSet) { Remove-Item "env:$k" -ErrorAction SilentlyContinue }
+if ($external) {
+    "--- external driver: no ClaudeHeim result.json" + $(if ($ResultPattern) { "; lines matching '$ResultPattern':" } else { "" })
+    if ($ResultPattern) { Select-String -Path (Join-Path $OutDir "LogOutput.log") -Pattern $ResultPattern | ForEach-Object { "  " + $_.Line } }
+}
 $result = Join-Path $OutDir "result.json"
-if (Test-Path $result) {
+if ($external) {
+    # nothing more: the driver's own lines were printed above
+} elseif (Test-Path $result) {
     $r = Get-Content $result -Raw | ConvertFrom-Json
     "--- result: $($r.commands) commands, $($r.failures.Count) failed, $($r.errors.Count) distinct game errors, $($r.screenshots) screenshots"
     $r.failures | ForEach-Object { "FAIL  $_" }
@@ -218,6 +312,24 @@ if (Test-Path $result) {
 } else {
     "--- no result.json: the scenario did not finish. Last ClaudeHeim lines:"
     Select-String -Path (Join-Path $OutDir "LogOutput.log") -Pattern "ClaudeHeim" | Select-Object -Last 15 | ForEach-Object { $_.Line }
+}
+# Test saves the scenario created (newchar / newworld): add them to the machine's registry (Manage-TestSaves.ps1).
+$testSaves = Join-Path $OutDir "testsaves.jsonl"
+if (Test-Path $testSaves) {
+    $registryPath = Join-Path $root "TEST_SAVES.json"
+    $reg = if (Test-Path $registryPath) { Get-Content $registryPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{ saves = @(); protected = @() } }
+    foreach ($line in Get-Content $testSaves) {
+        $s = $line | ConvertFrom-Json
+        $known = $reg.saves | Where-Object { $_.kind -eq $s.kind -and $_.name -eq $s.name -and $_.status -eq "active" }
+        if ($known) { continue }
+        $reg.saves = @($reg.saves) + [pscustomobject]@{
+            kind = $s.kind; name = $s.name; source = $s.source; status = "active"; platform = "windows"
+            created = $s.at; createdBy = $Owner; scenario = (Split-Path $Scenario -Leaf); preExisting = (-not $s.created)
+        }
+        "--- test save registered: $($s.kind) $($s.name) ($($s.source))"
+    }
+    $reg.saves = @($reg.saves); $reg.protected = @($reg.protected)
+    $reg | ConvertTo-Json -Depth 6 | Set-Content $registryPath -Encoding utf8
 }
 if (-not $Foreground) {
     if ($focusSamples -eq 0) { "--- background: the game never held focus" }

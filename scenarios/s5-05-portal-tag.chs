@@ -4,7 +4,9 @@
 enter RETEP TestWorld
 unequip
 place portal_wood 3 as portal
-goto portal 2
+goto portal 1.5
+lookat portal
+wait 1
 hover s5_portal_hover.txt
 expect hover contains "Portal"                  # UNVERIFIED wording of the localised hover
 interact portal
