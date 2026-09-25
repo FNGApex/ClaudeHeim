@@ -1,11 +1,16 @@
 # S5-43 - GUI scale slider (vanilla and -Mods Auga)
 # drafted by the peer session (SCENARIO_DRAFTS.md), reviewed before the run
 # GUI scale 60% / 100% / 150%: HUD, inventory, crafting, map, no overflow; #13 blank stats below 100%
-enter RETEP TestWorld
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces at fixed spots on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 unequip
 give HelmetBronze 1
 give Wood 30
-place piece_workbench 2 as wb
+place piece_workbench @flatfloor+0,2 as wb
 setc wb CraftingStation m_craftRequireRoof false
 # 60 %
 call GuiScaler.SetScale 0.6

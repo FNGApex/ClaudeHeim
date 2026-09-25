@@ -1,5 +1,10 @@
 # Reproduction pass for the upstream issues that may still apply to the 1.0 port (Auga/ISSUES_1.0.md). Run with -Mods Auga.
-enter RETEP TestWorld
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces at fixed spots on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 unequip
 set Player.m_localPlayer.m_godMode true
 
@@ -34,7 +39,7 @@ invoke AugaCompendiumController HideCompendium
 ui menu close
 
 # #84 upgrade level cut off in a container's top row
-place piece_chest 3 as chest
+place piece_chest @flatfloor+0,3 as chest
 fill chest SwordBronze 1 3
 fill chest AxeBronze 1 2
 fill chest HelmetBronze 1 4
@@ -45,7 +50,7 @@ dump InventoryGui.instance.m_containerGrid container_grid_tree
 ui inventory close
 
 # #100 wrong item after a max-upgraded one; #214 crafting-station level requirement
-place piece_workbench 2 as bench
+place piece_workbench @flatfloor-3,2 as bench
 setc bench CraftingStation m_craftRequireRoof false
 goto bench 1.6
 use

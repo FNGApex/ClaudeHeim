@@ -1,8 +1,11 @@
 # Checks for the Phase 5.5-5.9 fixes (run with -Mods Auga): compendium tabs + trophies, large-map hints and ping,
-# crafting icon / multi-craft amount, HUD food time, skills, build-menu hints and category colours. AUGATEST / AugaTest.
-newchar AUGATEST
-newworld AugaTest
-enter AUGATEST AugaTest
+# crafting icon / multi-craft amount, HUD food time, skills, build-menu hints and category colours.
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces at fixed spots on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 set Player.m_localPlayer.m_godMode true
 unequip
 
@@ -44,13 +47,13 @@ get Minimap.instance.m_selectedType
 ui map small
 
 # 5.7 crafting: stale icon (#100), multi-craft amount in the title (crafting-10)
-# a fresh character only knows recipes for materials it has held
 give Hammer 1
 give Wood 20
 give Feathers 5
 give Flint 5
 wait 2
-place piece_workbench 3 as wb
+place piece_workbench @flatfloor+0,3 as wb
+setc wb CraftingStation m_craftRequireRoof false
 goto wb 1.6
 interact wb
 wait 1.5

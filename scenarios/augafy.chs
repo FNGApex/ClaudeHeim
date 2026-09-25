@@ -1,10 +1,15 @@
 # "Everything becomes Augafied" checks (run with -Mods Auga): styled crosshair hover text, Auga split dialog.
-enter RETEP TestWorld
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 unequip
 set Player.m_localPlayer.m_godMode true
 
 # hud-3: Auga key-chip hover rows instead of vanilla "[E] Use"
-place piece_chest 3 as chest
+place piece_chest @flatfloor+0,2 as chest
 wait 1
 goto chest 2
 lookat chest

@@ -1,9 +1,14 @@
 # S5-7 - container persistence on rapid open/close (vanilla and -Mods Auga)
 # drafted by the peer session (SCENARIO_DRAFTS.md), reviewed before the run
 # rapid container cycling: no lost items, no stuck in-use flag
-enter RETEP TestWorld
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces at fixed spots on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 unequip
-place piece_chest 3 as chest
+place piece_chest @flatfloor+0,3 as chest
 fill chest Wood 20
 fill chest Stone 5
 goto chest 2

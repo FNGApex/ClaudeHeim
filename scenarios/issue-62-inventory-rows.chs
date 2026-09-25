@@ -1,9 +1,14 @@
 # #62 / #228 - extra inventory rows vs container panel overlap (run with -Mods Auga)
 # drafted by the peer session (SCENARIO_DRAFTS.md), reviewed before the run
 # #62/#228 player panel growth with more rows; overlap with an open container
-enter RETEP TestWorld
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces at fixed spots on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 unequip
-place piece_chest 3 as chest
+place piece_chest @flatfloor+0,3 as chest
 fill chest Wood 10
 ui inventory open
 wait 1

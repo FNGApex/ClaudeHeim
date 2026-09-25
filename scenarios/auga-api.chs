@@ -20,6 +20,15 @@ invoke AugaTabController@RightPanel SelectTab 0
 invoke AugaTabController@WorkbenchContent SelectTab 2
 wait 2
 shot api_inventory
+# api-7: per-state label colours (Button_SetTextColors) on a TMP label - hover turns the label red
+call asm:AugaAPI|Auga.API.SmallButton_Create @InventoryGui.instance.m_player ApiColorTest "Colour test"
+call asm:AugaAPI|Auga.API.Button_SetTextColors @last 1,1,1,1 1,0,0,1 0,0,1,1 1,1,1,1 0.5,0.5,0.5,1 1,1,1,1
+invoke UnityEngine.CanvasRenderer@ApiColorTest/Label GetColor
+hoverui ApiColorTest
+wait 0.6
+invoke UnityEngine.CanvasRenderer@ApiColorTest/Label GetColor
+expect value last contains "1.000, 0.000, 0.000"
+shot api_button_hover
 ui inventory close
 expect noerrors
 quit

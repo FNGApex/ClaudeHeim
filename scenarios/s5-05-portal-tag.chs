@@ -1,9 +1,14 @@
 # S5-5 - portal tag dialog (vanilla and -Mods Auga)
 # drafted by the peer session (SCENARIO_DRAFTS.md), reviewed before the run
 # portal tag dialog: 10-char limit, case, blank
-enter RETEP TestWorld
+# Runs on the lab (terrain plan phase 5): -Golden ClaudeLab:labtest, pieces at fixed spots on the lab stone floor (flatfloor, lab-flat.chs).
+enter LABTEST ClaudeLab
+# no wild creatures near the test (a Greyling attacked during a lab run); spawned/placed subjects are kept
+nomobs on
+teleport @flatfloor
+terrain clear @flatfloor 12
 unequip
-place portal_wood 3 as portal
+place portal_wood @flatfloor+0,3 as portal
 goto portal 1.5
 lookat portal
 wait 1
