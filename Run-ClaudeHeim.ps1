@@ -93,8 +93,10 @@ try {
         $goldDir = Join-Path $root "TestSavesGolden\$goldWorld"
         $saveRoot = Join-Path $env:USERPROFILE "AppData\LocalLow\IronGate\Valheim"
         $registry = Get-Content (Join-Path $root "TEST_SAVES.json") -Raw | ConvertFrom-Json
-        $okWorld = $registry.saves | Where-Object { $_.kind -eq "world" -and $_.name -eq $goldWorld -and $_.status -eq "active" -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") }
-        $okChar = $registry.saves | Where-Object { $_.kind -eq "character" -and $_.name -eq $goldChar -and $_.status -eq "active" -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") }
+        # "archived" counts too: the entry is ours and its files are no longer in the game folder, so restoring over it
+        # replaces nothing; the restore makes it active again (Manage-TestSaves -Archive removes it the same way later).
+        $okWorld = $registry.saves | Where-Object { $_.kind -eq "world" -and $_.name -eq $goldWorld -and $_.status -in @("active", "archived") -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") } | Select-Object -Last 1
+        $okChar = $registry.saves | Where-Object { $_.kind -eq "character" -and $_.name -eq $goldChar -and $_.status -in @("active", "archived") -and $_.source -eq "Local" -and (-not $_.platform -or $_.platform -eq "windows") } | Select-Object -Last 1
         $isProtected = $registry.protected | Where-Object { $_.name -eq $goldWorld -or $_.name -eq $goldChar }
         if (-not (Test-Path "$goldDir\golden.json") -or -not $okWorld -or -not $okChar -or $isProtected) { "golden restore refused: need $goldDir and registered local test saves $goldWorld / $goldChar"; exit 6 }
         $worldDir = Join-Path $saveRoot "worlds_local\$goldWorld"
@@ -104,6 +106,12 @@ try {
         $marksDir = Join-Path $ValheimDir "BepInEx\ClaudeHeim\marks"
         [IO.Directory]::CreateDirectory($marksDir) | Out-Null
         if (Test-Path "$goldDir\marks.txt") { Copy-Item "$goldDir\marks.txt" (Join-Path $marksDir "$goldWorld.txt") -Force }
+        if ($okWorld.status -ne "active" -or $okChar.status -ne "active") {
+            $okWorld.status = "active"
+            $okChar.status = "active"
+            $registry | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $root "TEST_SAVES.json") -Encoding utf8
+            "--- golden restore: $goldWorld / $goldChar were archived; restored from the golden copy and active again"
+        }
         "--- golden restore: $goldWorld + $goldChar from $((Get-Content "$goldDir\golden.json" -Raw | ConvertFrom-Json).saved)"
     }
 

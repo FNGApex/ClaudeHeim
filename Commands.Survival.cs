@@ -263,7 +263,7 @@ namespace ClaudeHeim
             if (ZoneSystem.instance.FindFloor(new Vector3(x, 1000f, z), out var floor))
             {
                 player.transform.position = new Vector3(x, floor + 0.2f, z);
-                if (player.m_body != null) player.m_body.velocity = Vector3.zero;
+                if (player.m_body != null) player.m_body.linearVelocity = Vector3.zero;
                 player.m_maxAirAltitude = player.transform.position.y;
             }
 

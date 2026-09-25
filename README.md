@@ -86,8 +86,11 @@ One command per line, `#` comments, `"quotes"` keep spaces. The scenario starts 
 | `terrain info\|height <pt>` | terrain op prefabs + heightmap resolution / ground height, biome and water level at a point. Points: `x z`, `@mark`, `@player`, `@name+dx,dz` |
 | `terrain pad <name> <pt> <size> [h]`, `level <pt> <r> [h]`, `raise\|lower <pt> <r> <d>`, `slope <pt1> <h1> <pt2> <h2> <width>`, `smooth <pt> <r>`, `water <pt> <r> <depth>`, `paint <pt> <r> dirt\|cultivated\|paved\|reset`, `reset <pt> <r>` | exact terrain edits (per-vertex, like the hoe's own data; base +-8 m limit, refused vertices are counted). Heights: absolute, or `+1.5` / `-2` relative to the point. `pad` also clears vegetation and records a mark; a pad already in place is skipped |
 | `terrain clear <pt> <r>` / `terrain nuke <pt> <r>` | remove vegetation and loose objects / EVERY networked object except players (and reset the terrain edits there) |
+| `terrain megaflatten <name> <pt> <radius> [h\|auto]` | a nuke over a large circle (up to 300 m; everything but players) and every vertex set to one exact height, zone by zone (unloaded zones are visited). Vertices beyond the +-8 m limit and in no-build locations are counted, not edited. `auto` = mid-relief when it fits the limit (nothing refused), else the median. Records a mark |
+| `findflatland <radius> [min] [max] [mark] [biome]` | the dry spot (default Meadows) whose generated relief inside the radius is smallest; stops at the first that fits the +-8 m limit, so `megaflatten ... auto` refuses nothing there |
+| `floor <name> <pt> <size> [piece]`, `floor clear <name>` | a size x size grid of floor tiles (default `stone_floor_2x2`) laid on flat ground, silently (no placement effects), each resting 5 cm into the ground; not removed by `despawn`. Mark `<name>` = the floor's top; `place`/`spawn @<name>+dx,dz` land on the tiles |
 | `terrain snapshot <name> <pt> <r>` / `terrain restore <name>` | save / restore the terrain data of the zones in an area, exactly |
-| `mark <name> [pt]`, `marks`, `findbiome <Biome> [min] [max] [mark]`, `teleport @mark` | named spots per world (BepInEx/ClaudeHeim/marks), nearest dry spot of a biome |
+| `mark <name> [pt]`, `marks`, `findbiome <Biome> [min] [max] [mark]`, `findshore [min] [max] [mark]`, `teleport @mark` | named spots per world (BepInEx/ClaudeHeim/marks), nearest dry spot of a biome, nearest beach with water 3+ m deep 12 m out (marks `<mark>` and `<mark>_sea`) |
 | `expect height <pt> [h] [tol]`, `expect biome <pt> <Biome>`, `expectfail <command...>` | terrain checks; a negative test that passes when the command is refused |
 
 | `learn all` | the player knows every material and crafting station level, so every recipe and piece is available (test characters) |
@@ -97,7 +100,7 @@ One command per line, `#` comments, `"quotes"` keep spaces. The scenario starts 
 LABTEST, pads and marks 100 m from spawn). `Manage-TestSaves.ps1 -SaveGolden -Name ClaudeLab -Character labtest` stores
 the world folder, the character and the marks in `TestSavesGolden\ClaudeLab`; `Run-ClaudeHeim.ps1 -Golden
 ClaudeLab:labtest` puts them back before the run (game closed, under the lock, registered local saves only), so every
-run starts on identical ground, objects and character. `scenarios/lab-check.chs` verifies it.
+run starts on identical ground, objects and character. `scenarios/lab-check.chs` verifies it. `scenarios/lab-flat.chs` (run once, then save only the world + marks) added the megaflattened site `flatland` and the 24 m stone floor `flatfloor` where the building scenarios place their pieces.
 
 **Terrain edits only run in registered local test worlds:** the runner passes `CLAUDEHEIM_TERRAIN_WORLDS` (the active,
 unprotected, local worlds in `TEST_SAVES.json`) and every editing command refuses any other world, and any cloud save.
@@ -124,12 +127,15 @@ Wards and no-build locations (e.g. the spawn stones) are refused like the hoe re
 | `teleport <x> <z> [timeout]` | Player.TeleportTo (distant teleport: waits for the zone, lands on the ground) |
 | `tombstones list\|clear [radius]` | the local player's own tombstones near the player (world cleanup after death tests) |
 | `die`, `respawn [timeout]` | die like the console `die` command (tombstone, death pin, foods cleared, 10 s respawn timer), then wait for the new player. `respawn` hands the snapshotted items back and removes the run's tombstone; the 5% skill loss of a normal death still applies |
-| `spawn <prefab> <dist> [as <ref>]` | Instantiate a networked prefab in front of the player |
-| `place <piece> <dist> [as <ref>]` | `Player.PlacePiece` - the hammer's own call (placed-by-player flag, effects, unlock messages), no resource cost |
+| `spawn <prefab> <dist>\|<@point> [as <ref>]` | Instantiate a networked prefab in front of the player, or exactly at a point facing the player (a mark keeps its height, e.g. `@harbor_sea` = the sea surface) |
+| `place <piece> <dist>\|<@point> [as <ref>]` | `Player.PlacePiece` - the hammer's own call (placed-by-player flag, effects, unlock messages), no resource cost. `<dist>` = in front of the player; `@mark+dx,dz` = exactly there, facing the player, on top of whatever is there (a floor tile), never below the point |
 | `fill <ref> <item> <n>` | put items in a container |
 | `despawn` | remove everything spawned/placed by this scenario |
 | `goto <ref> [child] <dist>` | stand that far from the object, on the side of the named child (e.g. `add_ore`), aim at it |
-| `lookat <ref> [child]` | aim the camera (the hover ray starts at the camera) |
+| `lookat <ref> [child]` | aim the camera (the hover ray starts at the camera); tries the object's colliders until the hover lands on it with hover text (portal rings, windmills) |
+| `moveto <ref> [child] [dy]` | put the player exactly on an object, dy m above it (default 0.5), no snap to the ground - e.g. onto a ship's deck |
+| `nomobs on [radius]\|off` | while on (default 60 m), every second removes wild AI creatures near the player; never players, tamed creatures or anything the scenario spawned/placed |
+| `achievementpopup [id\|name]` | show the achievement unlock popup only; nothing is unlocked (the game's own AchievementEvent unlocks on Steam) |
 | `hover [file]` | log the hovered object + hover text (optionally save the raw text) |
 | `use` / `interact <ref> [child]` | `Player.Interact` on the hovered object / `Interactable.Interact` directly |
 | `effect add\|remove <name>`, `effect list` | status effects |
@@ -137,7 +143,7 @@ Wards and no-build locations (e.g. the spawn stones) are refused like the hoe re
 | `console <command...>` | run a console command |
 | `set <Type.member.path> <value>` / `get <path>` | static-rooted reflection, e.g. `set AugaUnity.AugaHealthBar.DebugAdrenalineOverride 65`, `get InventoryGui.instance.m_craftingStationName.text` |
 | `setc <ref> <Component> <field> <value>` | field on a component of a spawned/placed object |
-| `call <Type.path.Method> [args]` | static method, or instance method at the end of a static path. An argument written `@Type.path` passes the object at that static path (e.g. `call Hud.instance.m_radialMenu.Open @Hud.instance.m_config null`) |
+| `call <Type.path.Method> [args]` | static method, or instance method at the end of a static path. Colours / vectors: `r,g,b[,a]`, `x,y[,z]`. An argument written `@Type.path` passes the object at that static path (e.g. `call Hud.instance.m_radialMenu.Open @Hud.instance.m_config null`) |
 | `loadasm <path>` | load an extra assembly (e.g. a mod API stub); its types are reachable as `asm:<AssemblyName>\|<Type>`. A relative path is relative to the scenario file |
 | `invoke <ComponentType>[@pathSuffix] <Method> [args]` | method on the first live component of that type (inactive included) |
 | `click <uiNameOrPath> [left\|middle\|right] [x y]` / `hoverui <uiNameOrPath>` | uGUI pointer events on an active UI object (buttons, tooltips); optional button and screen position |

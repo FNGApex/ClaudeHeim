@@ -230,6 +230,10 @@ namespace ClaudeHeim
                     break;
                 }
 
+                case "megaflatten":
+                    yield return MegaFlatten(a, i);
+                    break;
+
                 case "clear":
                 case "nuke":
                 {
@@ -369,6 +373,55 @@ namespace ClaudeHeim
             }
 
             throw new Exception($"no dry {wanted} within {max} m");
+        }
+
+        /// <summary>findshore [min] [max] [mark]: nearest beach (dry, at most 4 m above the sea) with water at least
+        /// 3 m deep 12 m away; marks the beach as &lt;mark&gt; and the water as &lt;mark&gt;_sea (ships, swimming).</summary>
+        private void FindShore(List<string> a)
+        {
+            var markName = Arg(a, 3);
+            if (markName != null && Marks.TryGetValue(markName, out var kept) && Marks.ContainsKey(markName + "_sea"))
+            {
+                Info($"findshore: mark '{markName}' already set at ({kept.x:0}, {kept.z:0}), kept");
+                return;
+            }
+
+            var min = Num(Arg(a, 1, "0"));
+            var max = Num(Arg(a, 2, "3000"));
+            var origin = Player.m_localPlayer != null ? Player.m_localPlayer.transform.position : Vector3.zero;
+            var water = ZoneSystem.instance.m_waterLevel;
+            for (var r = Mathf.Max(min, 16f); r <= max; r += 8f)
+            {
+                var steps = Mathf.Max(8, Mathf.CeilToInt(2f * Mathf.PI * r / 8f));
+                for (var s = 0; s < steps; s++)
+                {
+                    var angle = s * 2f * Mathf.PI / steps;
+                    var x = origin.x + Mathf.Cos(angle) * r;
+                    var z = origin.z + Mathf.Sin(angle) * r;
+                    var h = WorldGenerator.instance.GetHeight(x, z);
+                    if (h < water + 0.5f || h > water + 4f) continue;
+                    for (var d = 0; d < 16; d++)
+                    {
+                        var da = d * Mathf.PI / 8f;
+                        var sx = x + Mathf.Cos(da) * 12f;
+                        var sz = z + Mathf.Sin(da) * 12f;
+                        // deep enough for a Karve, and deep all around its hull
+                        if (WorldGenerator.instance.GetHeight(sx, sz) > water - 3f) continue;
+                        if (WorldGenerator.instance.GetHeight(sx + Mathf.Cos(da) * 6f, sz + Mathf.Sin(da) * 6f) > water - 3f) continue;
+                        Info($"findshore: beach ({x:0}, {z:0}) height {h:0.#}, sea ({sx:0}, {sz:0}) depth {water - WorldGenerator.instance.GetHeight(sx, sz):0.#}, {r:0} m from ({origin.x:0}, {origin.z:0})");
+                        if (markName != null)
+                        {
+                            Marks[markName] = new Vector3(x, h, z);
+                            Marks[markName + "_sea"] = new Vector3(sx, water, sz);
+                            TerrainLab.SaveMarks(Marks);
+                        }
+
+                        return;
+                    }
+                }
+            }
+
+            throw new Exception($"no beach with deep water within {max} m");
         }
 
         /// <summary>learn all: the local player knows every material, so every recipe and piece shows (test characters).</summary>

@@ -26,6 +26,7 @@ namespace ClaudeHeim
                 case "mark": Mark(a); return null;
                 case "marks": Info("marks: " + (Marks.Count == 0 ? "none" : string.Join(", ", Marks.Select(m => $"{m.Key} ({m.Value.x:0.#}, {m.Value.y:0.#}, {m.Value.z:0.#})")))); return null;
                 case "findbiome": FindBiome(a); return null;
+                case "findshore": FindShore(a); return null;
                 case "seedprobe": SeedProbe(a); return null;
                 case "learn": LearnAll(); return null;
                 case "wait": return Wait(F(Arg(a, 1, "1")));
@@ -53,8 +54,24 @@ namespace ClaudeHeim
                     }
 
                     return Teleport(F(Arg(a, 1)), F(Arg(a, 2)), F(Arg(a, 3, "60")));
-                case "spawn": Spawn(Arg(a, 1), F(Arg(a, 2, "3")), RefName(a)); return null;
-                case "place": return Place(Arg(a, 1), F(Arg(a, 2, "3")), RefName(a));
+                case "spawn":
+                    if ((Arg(a, 2) ?? "").StartsWith("@"))
+                    {
+                        var si = 2;
+                        Spawn(Arg(a, 1), 0f, RefName(a), Point(a, ref si));
+                        return null;
+                    }
+
+                    Spawn(Arg(a, 1), F(Arg(a, 2, "3")), RefName(a));
+                    return null;
+                case "place":
+                    if ((Arg(a, 2) ?? "").StartsWith("@"))
+                    {
+                        var pi = 2;
+                        return Place(Arg(a, 1), Point(a, ref pi), 0f, RefName(a));
+                    }
+
+                    return Place(Arg(a, 1), null, F(Arg(a, 2, "3")), RefName(a));
                 case "despawn": Despawn(); return null;
                 case "fill": Fill(Arg(a, 1), Arg(a, 2), int.Parse(Arg(a, 3, "1")), int.Parse(Arg(a, 4, "1"))); return null;
                 case "quality": Quality(Arg(a, 1), int.Parse(Arg(a, 2, "1"))); return null;
@@ -63,6 +80,11 @@ namespace ClaudeHeim
                 case "npctext": Chat.instance.SetNpcText(Player.m_localPlayer.gameObject, Vector3.up * 2f, 20f, 5f, Arg(a, 1, "Topic"), Arg(a, 2, "Text"), false); return null;
                 case "tabs": return TabTour(Arg(a, 1), Arg(a, 2, "tab"));
                 case "goto": return GoTo(a);
+                case "moveto": return MoveTo(a);
+                case "floor": Floor(a); return null;
+                case "findflatland": FindFlatLand(a); return null;
+                case "nomobs": NoMobs(Arg(a, 1, "on"), Arg(a, 2)); return null;
+                case "achievementpopup": AchievementPopup(Arg(a, 1)); return null;
                 case "lookat": return LookAt(Arg(a, 1), Arg(a, 2));
                 case "hover": Hover(a.Skip(1).ToList()); return null;
                 case "use": Use(); return null;
@@ -367,7 +389,8 @@ namespace ClaudeHeim
             return position;
         }
 
-        private void Spawn(string prefabName, float distance, string refName)
+        /// <summary>spawn &lt;prefab&gt; &lt;dist&gt;|&lt;@point&gt;: in front of the player, or at an exact point (a mark keeps its height, e.g. the sea surface).</summary>
+        private void Spawn(string prefabName, float distance, string refName, Vector3? at = null)
         {
             var prefab = ZNetScene.instance.GetPrefab(prefabName);
             if (prefab == null)
@@ -376,13 +399,24 @@ namespace ClaudeHeim
             }
 
             var player = Player.m_localPlayer;
-            var go = UnityEngine.Object.Instantiate(prefab, InFront(distance), Quaternion.LookRotation(-player.transform.forward));
+            var position = at ?? InFront(distance);
+            if (at.HasValue)
+            {
+                // on a floor tile if there is one; a sea mark keeps its water-surface height (the ray would hit the seabed)
+                position.y = Mathf.Max(at.Value.y, SurfaceHeight(at.Value.x, at.Value.z, at.Value.y) ?? at.Value.y);
+            }
+
+            var toPlayer = player.transform.position - position;
+            toPlayer.y = 0f;
+            var rotation = at.HasValue && toPlayer.sqrMagnitude > 0.01f ? Quaternion.LookRotation(toPlayer) : Quaternion.LookRotation(-player.transform.forward);
+            var go = UnityEngine.Object.Instantiate(prefab, position, rotation);
             _created.Add(go);
             _refs[refName ?? prefabName] = go;
         }
 
-        /// <summary>Places a build piece through Player.PlacePiece - the same call the hammer makes - without charging resources.</summary>
-        private IEnumerator Place(string pieceName, float distance, string refName)
+        /// <summary>Places a build piece through Player.PlacePiece - the same call the hammer makes - without charging resources.
+        /// place &lt;piece&gt; &lt;dist&gt;|&lt;@point&gt;: in front of the player, or at an exact point (a lab mark) facing the player.</summary>
+        private IEnumerator Place(string pieceName, Vector3? at, float distance, string refName)
         {
             var player = Player.m_localPlayer;
             var prefab = ZNetScene.instance.GetPrefab(pieceName);
@@ -392,8 +426,18 @@ namespace ClaudeHeim
                 throw new Exception("no build piece " + pieceName);
             }
 
-            var position = InFront(distance);
-            var rotation = Quaternion.LookRotation(-player.transform.forward);
+            var position = at ?? InFront(distance);
+            if (at.HasValue)
+            {
+                // on top of whatever is there (a floor tile), never below the point
+                position.y = Mathf.Max(at.Value.y, SurfaceHeight(at.Value.x, at.Value.z, at.Value.y) ?? at.Value.y);
+            }
+
+            var toPlayer = player.transform.position - position;
+            toPlayer.y = 0f;
+            var rotation = at.HasValue && toPlayer.sqrMagnitude > 0.01f
+                ? Quaternion.LookRotation(toPlayer)
+                : Quaternion.LookRotation(-player.transform.forward);
             var before = new HashSet<Piece>(UnityEngine.Object.FindObjectsByType<Piece>(FindObjectsSortMode.None));
             var noCost = player.m_noPlacementCost;
             player.m_noPlacementCost = true;
@@ -495,10 +539,53 @@ namespace ClaudeHeim
             yield return LookAt(Arg(a, 1), childName);
         }
 
+        /// <summary>achievementpopup [name]: shows the game's unlock popup for an achievement WITHOUT unlocking anything
+        /// (Achievements.AchievementEvent would unlock it on Steam for the user's real account).</summary>
+        private void AchievementPopup(string name)
+        {
+            var achievements = Achievements.m_instance ?? throw new Exception("no Achievements instance");
+            var all = achievements.m_achievementLists.SelectMany(l => l.m_achievements).ToList();
+            var ach = (name == null ? all.FirstOrDefault(x => x.m_icon != null)
+                          : all.FirstOrDefault(x => x.m_id.Equals(name, StringComparison.OrdinalIgnoreCase) || Localization.instance.Localize(x.m_name).Equals(name, StringComparison.OrdinalIgnoreCase)))
+                      ?? throw new Exception($"no achievement '{name}' (of {all.Count})");
+            var prefab = achievements.m_unlockAchievementPopup;
+            UnityEngine.Object.Instantiate(prefab, prefab.transform.position, prefab.transform.rotation).GetComponent<AchievementUnlockPopup>().SetInfo(ach.m_icon, ach.m_name);
+            Info($"achievementpopup: {ach.m_id} '{Localization.instance.Localize(ach.m_name)}' (popup only, nothing unlocked)");
+        }
+
+        /// <summary>moveto &lt;ref&gt; [child] [dy]: put the player exactly on an object (e.g. a ship deck), dy metres above it,
+        /// with no snap to the terrain below (goto snaps to the ground, which is the seabed under a ship).</summary>
+        private IEnumerator MoveTo(List<string> a)
+        {
+            var target = Resolve(Arg(a, 1)).transform;
+            var dy = 0.5f;
+            if (a.Count > 2 && !float.TryParse(a[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _))
+            {
+                target = target.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name.Equals(a[2], StringComparison.OrdinalIgnoreCase))
+                         ?? throw new Exception($"no child '{a[2]}' under {target.name}");
+                if (a.Count > 3) dy = F(a[3]);
+            }
+            else if (a.Count > 2)
+            {
+                dy = F(a[2]);
+            }
+
+            var player = Player.m_localPlayer;
+            var position = target.position + Vector3.up * dy;
+            player.transform.position = position;
+            player.m_body.position = position;
+            player.m_body.linearVelocity = Vector3.zero;
+            player.m_maxAirAltitude = position.y;
+            yield return new WaitForSecondsRealtime(1f);
+            player.m_maxAirAltitude = player.transform.position.y;
+            Info($"moveto: at {player.transform.position} (target {target.name} {target.position}), on ship: {(player.GetStandingOnShip() != null)}");
+        }
+
         /// <summary>lookat &lt;ref&gt; [childName]: turns the character and the camera at an object (or a named child, e.g. a smelter's add-ore switch).</summary>
         private IEnumerator LookAt(string refName, string childName)
         {
-            var target = Resolve(refName).transform;
+            var root = Resolve(refName).transform;
+            var target = root;
             if (!string.IsNullOrEmpty(childName))
             {
                 var child = target.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name.Equals(childName, StringComparison.OrdinalIgnoreCase));
@@ -510,12 +597,42 @@ namespace ClaudeHeim
                 target = child;
             }
 
-            var collider = target.GetComponentInChildren<Collider>();
-            var point = collider != null ? collider.bounds.center : target.position;
+            // Aim at collider centres until the hover lands on the object with hover text: a hollow shape (a portal ring) has
+            // nothing at its centre, and a body collider (a windmill's) hovers nothing. Colliders that carry their own
+            // hover/interaction (a smelter's add_ore switch) go first.
+            var colliders = target.GetComponentsInChildren<Collider>().Where(c => c.enabled && !c.isTrigger)
+                .OrderBy(c => c.GetComponent<Hoverable>() != null || c.GetComponent<Interactable>() != null ? 0 : 1).ToList();
+            var points = colliders.Select(c => c.bounds.center).ToList();
+            if (points.Count == 0) points.Add(target.position);
+            var found = false;
+            for (var p = 0; p < points.Count && p < 40; p++)
+            {
+                yield return Aim(points[p], p == 0 ? 40 : 15);
+                var hover = Player.m_localPlayer.GetHoverObject();
+                // on the object AND showing hover text (a bare body collider of a windmill hovers nothing)
+                if (hover != null && hover.transform.IsChildOf(root) && !string.IsNullOrEmpty(CurrentHoverText(out _)))
+                {
+                    if (p > 0) Info($"lookat: aimed at collider {colliders[p].name} (#{p}); the first one showed no hover");
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found && points.Count > 1)
+            {
+                // nothing hoverable: fall back to the first aim point (the old behaviour)
+                yield return Aim(points[0], 15);
+            }
+
+            yield return new WaitForSecondsRealtime(0.5f);
+        }
+
+        private IEnumerator Aim(Vector3 point, int frames)
+        {
             var player = Player.m_localPlayer;
             // The hover ray starts at the (third person, orbiting) camera, so aim the camera, not the eyes: set the
             // mouse-look yaw/pitch the camera follows and let it settle over a few frames.
-            for (var i = 0; i < 40; i++)
+            for (var i = 0; i < frames; i++)
             {
                 var origin = GameCamera.instance != null && i > 0 ? GameCamera.instance.transform.position : player.GetEyePoint();
                 var direction = (point - origin).normalized;
@@ -529,8 +646,6 @@ namespace ClaudeHeim
                 player.m_lookPitch = Mathf.Clamp(-Mathf.Asin(Mathf.Clamp(direction.y, -1f, 1f)) * Mathf.Rad2Deg, -89f, 89f);
                 yield return null;
             }
-
-            yield return new WaitForSecondsRealtime(0.5f);
         }
 
         private string CurrentHoverText(out GameObject hover)
@@ -892,6 +1007,15 @@ namespace ClaudeHeim
             if (target.IsEnum) return Enum.Parse(target, text, true);
             if (target == typeof(bool)) return text == "1" || text.Equals("true", StringComparison.OrdinalIgnoreCase);
             if (target == typeof(float)) return F(text);
+            if (target == typeof(Color) || target == typeof(Vector3) || target == typeof(Vector2))
+            {
+                // "r,g,b[,a]" / "x,y[,z]"
+                var v = text.Split(',').Select(F).ToArray();
+                if (target == typeof(Color)) return new Color(v[0], v[1], v[2], v.Length > 3 ? v[3] : 1f);
+                if (target == typeof(Vector3)) return new Vector3(v[0], v[1], v.Length > 2 ? v[2] : 0f);
+                return new Vector2(v[0], v[1]);
+            }
+
             return System.Convert.ChangeType(text, target, System.Globalization.CultureInfo.InvariantCulture);
         }
 
@@ -920,7 +1044,9 @@ namespace ClaudeHeim
                     return byPath.gameObject;
                 }
 
-                var byName = canvas.GetComponentsInChildren<Transform>(false).FirstOrDefault(t => t.name == nameOrPath);
+                // Several objects with one name (list rows, tiles): the first one that is a live, clickable button wins.
+                var named = canvas.GetComponentsInChildren<Transform>(false).Where(t => t.name == nameOrPath).ToList();
+                var byName = named.FirstOrDefault(t => t.GetComponent<Selectable>() is Selectable sel && sel.IsInteractable()) ?? named.FirstOrDefault();
                 if (byName != null)
                 {
                     return byName.gameObject;

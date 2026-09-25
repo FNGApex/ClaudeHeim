@@ -70,11 +70,12 @@ namespace ClaudeHeim
         /// <summary>
         /// One edit over every heightmap within <paramref name="bound"/> of <paramref name="center"/> (square bound).
         /// <paramref name="height"/> decides per vertex; <paramref name="paintArea"/> + <paramref name="paint"/> per
-        /// mask texel (paint null = reset the texel to generated ground).
+        /// mask texel (paint null = reset the texel to generated ground). <paramref name="checkArea"/> false = edit whatever
+        /// heightmaps are loaded (megaflatten walks a large area zone by zone and checks no-build per vertex itself).
         /// </summary>
-        internal static Result Edit(Vector3 center, float bound, HeightRule height, Func<float, float, bool> paintArea = null, Color? paint = null)
+        internal static Result Edit(Vector3 center, float bound, HeightRule height, Func<float, float, bool> paintArea = null, Color? paint = null, bool checkArea = true)
         {
-            CheckArea(center, bound);
+            if (checkArea) CheckArea(center, bound);
             var result = new Result();
             var heightmaps = new List<Heightmap>();
             Heightmap.FindHeightmap(center, bound * 1.5f + 2f, heightmaps);

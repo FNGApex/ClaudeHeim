@@ -93,6 +93,8 @@ namespace ClaudeHeim
                 StartupQuiet();
             }
 
+            _runner?.NoMobsTick();
+
             // The scenario starts once the main menu exists; from there one coroutine carries it across scene loads.
             if (_runner != null && !_runner.Started && FejdStartup.instance != null)
             {
