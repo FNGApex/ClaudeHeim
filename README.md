@@ -135,6 +135,7 @@ Wards and no-build locations (e.g. the spawn stones) are refused like the hoe re
 | `lookat <ref> [child]` | aim the camera (the hover ray starts at the camera); tries the object's colliders until the hover lands on it with hover text (portal rings, windmills) |
 | `moveto <ref> [child] [dy]` | put the player exactly on an object, dy m above it (default 0.5), no snap to the ground - e.g. onto a ship's deck |
 | `nomobs on [radius]\|off` | while on (default 60 m), every second removes wild AI creatures near the player; never players, tamed creatures or anything the scenario spawned/placed |
+| `pickup [radius]` | pick up every loose item near the player (Humanoid.Pickup, default 5 m), e.g. items a console command dropped |
 | `achievementpopup [id\|name]` | show the achievement unlock popup only; nothing is unlocked (the game's own AchievementEvent unlocks on Steam) |
 | `hover [file]` | log the hovered object + hover text (optionally save the raw text) |
 | `use` / `interact <ref> [child]` | `Player.Interact` on the hovered object / `Interactable.Interact` directly |

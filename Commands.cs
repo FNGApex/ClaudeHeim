@@ -84,6 +84,7 @@ namespace ClaudeHeim
                 case "floor": Floor(a); return null;
                 case "findflatland": FindFlatLand(a); return null;
                 case "nomobs": NoMobs(Arg(a, 1, "on"), Arg(a, 2)); return null;
+                case "pickup": PickupAround(F(Arg(a, 1, "5"))); return null;
                 case "achievementpopup": AchievementPopup(Arg(a, 1)); return null;
                 case "lookat": return LookAt(Arg(a, 1), Arg(a, 2));
                 case "hover": Hover(a.Skip(1).ToList()); return null;

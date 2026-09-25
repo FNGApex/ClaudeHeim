@@ -23,6 +23,23 @@ namespace ClaudeHeim
             if (_noMobs) NoMobsTick(true);
         }
 
+        /// <summary>pickup [radius]: the local player picks up every loose item within the radius (default 5 m), the way
+        /// walking over it would (Humanoid.Pickup, no auto-equip) - e.g. magic items a console command dropped at the feet.</summary>
+        private void PickupAround(float radius)
+        {
+            var player = Player.m_localPlayer ?? throw new Exception("no local player");
+            var here = player.transform.position;
+            var names = new List<string>();
+            foreach (var drop in UnityEngine.Object.FindObjectsByType<ItemDrop>(FindObjectsSortMode.None))
+            {
+                if (drop == null || Vector3.Distance(drop.transform.position, here) > radius) continue;
+                var name = drop.m_itemData?.m_shared?.m_name ?? drop.name;
+                if (player.Pickup(drop.gameObject, false, false)) names.Add(Localization.instance.Localize(name));
+            }
+
+            Info($"pickup: {names.Count} item(s) within {radius} m" + (names.Count > 0 ? ": " + string.Join(", ", names) : ""));
+        }
+
         private string NoMobsSummary() => _noMobsRemoved.Count == 0 ? "none" : string.Join(", ", _noMobsRemoved.Select(kv => $"{kv.Key} x{kv.Value}"));
 
         /// <summary>Called from the plugin's Update.</summary>

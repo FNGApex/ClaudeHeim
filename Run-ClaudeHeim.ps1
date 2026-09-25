@@ -4,7 +4,8 @@
 # everything it deployed and releases the lock.
 #
 #   -Scenario  path of a .chs scenario file (relative paths resolve against ClaudeHeim/scenarios)
-#   -Mods      extra mods to deploy for the run and remove afterwards. Known names: Auga.
+#   -Mods      extra mods to deploy for the run and remove afterwards. Known names: Auga, EpicLoot (staged Thunderstore
+#              release + Jotunn + JsonDotNET), EpicLootFork (our ValheimMods fork build + the same dependencies).
 #              (ValheimCreative / ValheimSurvival are normally installed already and are left alone.)
 #   -Resolution WxH window size for the run (default 1600x900; e.g. 2560x1080 for ultrawide layouts)
 #   -Vanilla   moves every other plugin folder aside for the run (BepInEx\plugins_claudeheim_aside) and restores it
@@ -124,7 +125,29 @@ try {
                 $build = dotnet build (Join-Path $root "Auga\Auga\Auga.csproj") -c Release -v q -p:DeployAuga=true "-p:ValheimDir=$ValheimDir" 2>&1
                 if ($LASTEXITCODE -ne 0) { $build | Select-String "error" | Select-Object -First 10; "Auga build failed"; exit 4 }
             }
-            default { "unknown mod '$mod' (known: Auga)"; exit 5 }
+            { $_ -in @("EpicLoot", "EpicLootFork") } {
+                # EpicLoot = the staged Thunderstore release (EpicLoot\deploy\stock: EpicLoot + Jotunn + JsonDotNET, the
+                # declared dependencies); EpicLootFork = our fork's build (EpicLoot\ValheimMods) with the same
+                # dependencies. Everything goes into one plugins\<name> folder, removed again by the cleanup below.
+                $stock = Join-Path $root "EpicLoot\deploy\stock"
+                if (-not (Test-Path $stock)) { "EpicLoot staging folder missing: $stock"; exit 5 }
+                $target = Join-Path $plugins $mod
+                [IO.Directory]::CreateDirectory($target) | Out-Null
+                foreach ($pkg in Get-ChildItem $stock -Directory) {
+                    if ($mod -eq "EpicLootFork" -and $pkg.Name -like "RandyKnapp-EpicLoot-*") { continue }
+                    Copy-Item (Join-Path $pkg.FullName "plugins\*") $target -Recurse -Force
+                }
+                if ($mod -eq "EpicLootFork") {
+                    $proj = Join-Path $root "EpicLoot\ValheimMods\EpicLoot\EpicLoot.csproj"
+                    $build = dotnet build $proj -c Release -v q 2>&1
+                    if ($LASTEXITCODE -ne 0) { $build | Select-String "error" | Select-Object -First 10; "EpicLoot fork build failed"; exit 4 }
+                    $dll = Get-ChildItem (Join-Path $root "EpicLoot\ValheimMods\EpicLoot\bin") -Recurse -Filter EpicLoot.dll | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                    if (-not $dll) { "EpicLoot fork build produced no EpicLoot.dll"; exit 4 }
+                    Copy-Item $dll.FullName $target -Force
+                }
+                "--- deployed $mod -> plugins\$mod (" + ((Get-ChildItem $target -Filter *.dll).Name -join ", ") + ")"
+            }
+            default { "unknown mod '$mod' (known: Auga, EpicLoot, EpicLootFork)"; exit 5 }
         }
     }
 
